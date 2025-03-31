@@ -1,0 +1,177 @@
+#include <SDL.h>
+#include <SDL_image.h>
+#include <iostream>
+#include <cstdlib>
+#include <ctime>
+
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
+const int PLAYER_SIZE = 50;
+const int OBJECT_SIZE = 30;
+const int GRAVITY = 2;
+const int PLAYER_SPEED = 5;
+const int JUMP_STRENGTH = -15;
+
+SDL_Window* window = nullptr;
+SDL_Renderer* renderer = nullptr;
+SDL_Texture* playerTexture = nullptr;
+SDL_Texture* objectTexture = nullptr;
+SDL_Texture* groundObjectTexture = nullptr;
+
+struct Player {
+    int x, y;
+    int velocity;
+    bool isJumping;
+};
+
+struct FallingObject {
+    int x, y;
+    int speed;
+};
+
+struct GroundObject {
+    int x, y;
+    int speed;
+};
+
+Player player = {SCREEN_WIDTH / 2, SCREEN_HEIGHT - PLAYER_SIZE, 0, false};
+FallingObject object = {rand() % (SCREEN_WIDTH - OBJECT_SIZE), 0, 3};
+GroundObject groundObject = {rand() % (SCREEN_WIDTH - OBJECT_SIZE), SCREEN_HEIGHT - OBJECT_SIZE, 3};
+
+bool init() {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    window = SDL_CreateWindow("Dodge the Falling Objects", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) {
+        std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+bool loadTextures() {
+    playerTexture = IMG_LoadTexture(renderer, "player.png"); // Replace with your player image
+    objectTexture = IMG_LoadTexture(renderer, "object.png"); // Replace with your object image
+    groundObjectTexture = IMG_LoadTexture(renderer, "ground_object.png"); // Replace with your ground object image
+    if (!playerTexture || !objectTexture || !groundObjectTexture) {
+        std::cerr << "Failed to load textures!" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+void close() {
+    SDL_DestroyTexture(playerTexture);
+    SDL_DestroyTexture(objectTexture);
+    SDL_DestroyTexture(groundObjectTexture);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+bool checkCollision(int x1, int y1, int w1, int h1, int x2, int y2, int w2, int h2) {
+    return (x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2);
+}
+
+int main(int argc, char* argv[]) {
+    if (!init()) {
+        std::cerr << "Failed to initialize!" << std::endl;
+        return -1;
+    }
+
+    if (!loadTextures()) {
+        std::cerr << "Failed to load textures!" << std::endl;
+        return -1;
+    }
+
+    srand(static_cast<unsigned int>(time(0)));
+
+    bool quit = false;
+    SDL_Event e;
+
+    while (!quit) {
+        while (SDL_PollEvent(&e) != 0) {
+            if (e.type == SDL_QUIT) {
+                quit = true;
+            }
+        }
+
+        // Handle player movement
+        const Uint8* keystates = SDL_GetKeyboardState(nullptr);
+        if (keystates[SDL_SCANCODE_A] && player.x > 0) { // Move left with "A"
+            player.x -= PLAYER_SPEED;
+        }
+        if (keystates[SDL_SCANCODE_D] && player.x < SCREEN_WIDTH - PLAYER_SIZE) { // Move right with "D"
+            player.x += PLAYER_SPEED;
+        }
+        if (keystates[SDL_SCANCODE_W] && !player.isJumping) { // Jump with "W"
+            player.velocity = JUMP_STRENGTH;
+            player.isJumping = true;
+        }
+
+        // Apply gravity
+        player.velocity += GRAVITY;
+        player.y += player.velocity;
+
+        // Prevent player from falling through the ground
+        if (player.y > SCREEN_HEIGHT - PLAYER_SIZE) {
+            player.y = SCREEN_HEIGHT - PLAYER_SIZE;
+            player.velocity = 0;
+            player.isJumping = false;
+        }
+
+        // Update falling object
+        object.y += object.speed;
+        if (object.y > SCREEN_HEIGHT) {
+            object.x = rand() % (SCREEN_WIDTH - OBJECT_SIZE);
+            object.y = 0;
+        }
+
+        // Update ground object
+        groundObject.x += groundObject.speed;
+        if (groundObject.x > SCREEN_WIDTH) {
+            groundObject.x = -OBJECT_SIZE;
+        }
+
+        // Check for collisions
+        if (checkCollision(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, object.x, object.y, OBJECT_SIZE, OBJECT_SIZE) ||
+            checkCollision(player.x, player.y, PLAYER_SIZE, PLAYER_SIZE, groundObject.x, groundObject.y, OBJECT_SIZE, OBJECT_SIZE)) {
+            std::cout << "Game Over!" << std::endl;
+            quit = true;
+        }
+
+        // Clear screen
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        // Render player
+        SDL_Rect playerRect = {player.x, player.y, PLAYER_SIZE, PLAYER_SIZE};
+        SDL_RenderCopy(renderer, playerTexture, nullptr, &playerRect);
+
+        // Render falling object
+        SDL_Rect objectRect = {object.x, object.y, OBJECT_SIZE, OBJECT_SIZE};
+        SDL_RenderCopy(renderer, objectTexture, nullptr, &objectRect);
+
+        // Render ground object
+        SDL_Rect groundObjectRect = {groundObject.x, groundObject.y, OBJECT_SIZE, OBJECT_SIZE};
+        SDL_RenderCopy(renderer, groundObjectTexture, nullptr, &groundObjectRect);
+
+        // Update screen
+        SDL_RenderPresent(renderer);
+
+        SDL_Delay(16); // ~60 FPS
+    }
+
+    close();
+    return 0;
+}
